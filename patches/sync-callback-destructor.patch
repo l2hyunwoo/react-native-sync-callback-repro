@@ -1,5 +1,5 @@
 --- a/ReactCommon/react/bridging/Function.h	2026-10-29 00:01:36
-+++ b/ReactCommon/react/bridging/Function.h	2026-10-29 00:01:36
++++ b/ReactCommon/react/bridging/Function.h	2026-10-29 01:02:41
 @@ -104,7 +104,7 @@
  class SyncCallback<R(Args...)> {
   public:
@@ -9,7 +9,7 @@
    {
    }
  
-@@ -114,19 +114,32 @@
+@@ -114,19 +114,39 @@
    SyncCallback &operator=(const SyncCallback &) = delete;
  
    // Allow move
@@ -30,13 +30,20 @@
    {
 -    if (auto wrapper = wrapper_.lock()) {
 -      wrapper->destroy();
++    // Without an invoker this callback can only be used on the JS thread.
++    if (!jsInvoker_) {
++      if (auto wrapper = wrapper_.lock()) {
++        wrapper->destroy();
++      }
++      return;
+     }
 +    // May run on any thread (e.g. the fbjni destructor thread). Taking a strong
 +    // reference here could make this thread drop the last one and destroy the
 +    // jsi::Function while the runtime is being torn down, so release it on the
 +    // JS thread instead.
-+    if (!jsInvoker_ || wrapper_.expired()) {
++    if (wrapper_.expired()) {
 +      return;
-     }
++    }
 +    jsInvoker_->invokeAsync([wrapper = std::move(wrapper_)](jsi::Runtime & /*rt*/) {
 +      if (auto strong = wrapper.lock()) {
 +        strong->destroy();
@@ -45,7 +52,7 @@
    }
  
    R operator()(Args... args) const
-@@ -177,6 +190,7 @@
+@@ -177,6 +197,7 @@
  
    // Held weakly so lifetime is managed by LongLivedObjectCollection.
    std::weak_ptr<CallbackWrapper> wrapper_;
