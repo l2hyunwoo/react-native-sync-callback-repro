@@ -68,8 +68,9 @@ com.facebook.jni.DestructorThread$1.run
 ## Test the fix
 
 `patches/sync-callback-destructor.patch` changes `~SyncCallback` so that it does not take a
-strong reference. It posts a task with only the `weak_ptr` to the `CallInvoker`, and the
-JS thread destroys the wrapper.
+strong reference. It keeps the runtime and the wrapper address from construction and
+removes the wrapper from `LongLivedObjectCollection` by that address. The collection's
+mutex orders this removal against `clear()` during runtime teardown.
 
 To test it, apply the patch and build React Native from source.
 `android/settings.gradle` enables `includeBuild('../node_modules/react-native')` when you
