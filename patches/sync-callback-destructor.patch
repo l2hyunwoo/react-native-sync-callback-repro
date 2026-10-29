@@ -6,7 +6,7 @@
    SyncCallback(jsi::Runtime &rt, jsi::Function function, std::shared_ptr<CallInvoker> jsInvoker)
 -      : wrapper_(CallbackWrapper::createWeak(std::move(function), rt, std::move(jsInvoker)))
 +      : wrapper_(CallbackWrapper::createWeak(std::move(function), rt, std::move(jsInvoker))),
-+        runtime_(&rt),
++        collection_(&LongLivedObjectCollection::get(rt)),
 +        wrapperPtr_(wrapper_.lock().get())
    {
    }
@@ -18,7 +18,7 @@
 -  SyncCallback(SyncCallback &&other) noexcept : wrapper_(std::move(other.wrapper_)) {}
 +  SyncCallback(SyncCallback &&other) noexcept
 +      : wrapper_(std::move(other.wrapper_)),
-+        runtime_(std::exchange(other.runtime_, nullptr)),
++        collection_(std::exchange(other.collection_, nullptr)),
 +        wrapperPtr_(std::exchange(other.wrapperPtr_, nullptr))
 +  {
 +  }
@@ -26,7 +26,7 @@
    SyncCallback &operator=(SyncCallback &&other) noexcept
    {
      wrapper_ = std::move(other.wrapper_);
-+    runtime_ = std::exchange(other.runtime_, nullptr);
++    collection_ = std::exchange(other.collection_, nullptr);
 +    wrapperPtr_ = std::exchange(other.wrapperPtr_, nullptr);
      return *this;
    }
@@ -40,17 +40,19 @@
 +    // collection's lock, racing with clear() during runtime teardown. Remove by
 +    // address instead, so any release happens under that lock. expired() skips
 +    // wrappers that clear() already released, whose address may be reused.
-+    if (runtime_ != nullptr && !wrapper_.expired()) {
-+      LongLivedObjectCollection::get(*runtime_).remove(wrapperPtr_);
++    if (collection_ != nullptr && !wrapper_.expired()) {
++      collection_->remove(wrapperPtr_);
      }
    }
  
-@@ -177,6 +191,9 @@
+@@ -177,6 +191,11 @@
  
    // Held weakly so lifetime is managed by LongLivedObjectCollection.
    std::weak_ptr<CallbackWrapper> wrapper_;
 +  // Used by the destructor to release the wrapper without locking wrapper_.
-+  jsi::Runtime *runtime_;
++  // The collection outlives the runtime: LongLivedObjectCollection::get() never
++  // erases its entries.
++  LongLivedObjectCollection *collection_;
 +  const LongLivedObject *wrapperPtr_;
  };
  
